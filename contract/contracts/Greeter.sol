@@ -48,13 +48,19 @@
 
 // File: hacknovate.sol/project.sol
 
+/**
+ *Submitted for verification at Etherscan.io on 2022-11-05
+*/
+
+// File: HACKATHON/hack.sol
+
+
+
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 
 contract EthCart{
-
-    uint256 public  ProductId;
 
     // company Owner
     address Owner;
@@ -83,7 +89,7 @@ contract EthCart{
         uint256 Product_Price;
     }
 
-     struct Product_Status{
+    struct Product_Status{
         address Buyer_Owner; 
         status Status;
         uint Time_Lock;
@@ -99,14 +105,10 @@ contract EthCart{
         // track project Status by ProjectId
     mapping(uint=>Product_Status) public ProductStatus;
 
-    // track buyer balance for specific product
-    mapping(address=>mapping (uint =>uint)) public Balance;
-
-    // approved : buyer can withdraw their after succesfull cancelation
-    mapping(address=>mapping (uint=>bool)) public Approved;
-
     // track owner address by projectId
     mapping(uint=>address) public product_Owner;
+
+    mapping(uint=>uint ) public PriceOfProduct;
 
 
     modifier OnlyOwner(){
@@ -126,48 +128,23 @@ contract EthCart{
     function Submit(
         string memory Product_Name,
         string memory Product_Description,
-        uint256 Product_Price
-    ) public returns(uint){
-        ProductId++;
+        uint256 Product_Price,
+        uint256 ProductId
+    ) public {
         ProductDetails[msg.sender][ProductId]=Product_Details(msg.sender,Product_Name,Product_Description,Product_Price);
-        Balance[msg.sender][ProductId]=Product_Price;
         product_Owner[ProductId]=msg.sender;
+        PriceOfProduct[ProductId]=Product_Price;
         emit Product_register(msg.sender, ProductId, Product_Price);
-        return ProductId;
 
     }
 
 
     // any buyer can buy this project by productId
     function Buy(uint _ProductId, uint timeStamp) public payable  {
-        require(_ProductId<=ProductId,"Unlicensed Product");
         require(ProductStatus[_ProductId].Status==status.avilable,"product is not avilable");
-        Product_Details memory Product_details = ProductDetails[product_Owner[_ProductId]][_ProductId];
-        uint amount=Product_details.Product_Price;
-        require(msg.value==amount,"insufficient balance or entered incorrect amount ");
-        // if (msg.sender==Product_details.Product_Owner){
-        //     revert Unauthorized({reason:"Owner can't buy own product"});
-        // }
-        // else {
-        //     if (amount>msg.value){
-        //         revert InsufficientBalance({
-        //             available: msg.value,
-        //             required: amount}
-
-        //         );
-        //     }
-        //     else {
-        //         require(msg.value==amount,"please entered correct product price");
-        //         ProductStatus[_ProductId]=Product_Status(msg.sender,status.ordered,timeStamp);
-        //         Balance[msg.sender][_ProductId]=msg.value;
-        //         emit Product_Buy(msg.sender, _ProductId, amount);
-
-
-        //     }
-        // }
+        require(msg.value==PriceOfProduct[_ProductId],"insufficient balance or entered incorrect amount ");
         ProductStatus[_ProductId]=Product_Status(msg.sender,status.ordered,timeStamp);
-        Balance[msg.sender][_ProductId]=msg.value;
-        emit Product_Buy(msg.sender, _ProductId, amount);
+        emit Product_Buy(msg.sender, _ProductId, msg.value);
     }
 
 
@@ -179,18 +156,6 @@ contract EthCart{
     }
 
 
-    // buyer can withdraw money after cancalation of product(in case of cancel)
-    function withdrawBuyer(uint _ProductId) public {
-        Product_Status memory product_Status= ProductStatus[_ProductId];
-        address Buyer_owner=product_Status.Buyer_Owner;
-        require(msg.sender!=Owner,"you're not buyer of this product");
-        require(Approved[msg.sender][_ProductId],"hasn't approved");
-        uint amount=Balance[msg.sender][_ProductId];
-        Balance[msg.sender][_ProductId]=0;
-        payable(Buyer_owner).transfer(amount);
-
-    
-    }
 
         // buyer can cancel their product within 7 day 
     function cancel(uint _ProductId , uint timeStamp ) public {
@@ -199,31 +164,33 @@ contract EthCart{
         uint initialtime=productStatus.Time_Lock;
         uint timeperiod=timeStamp-initialtime;
         require(timeperiod<604800,"you're 7 days time limit exceeded for cancelation");
-        Approved[msg.sender][_ProductId]=true;
-        ProductStatus[_ProductId]=Product_Status(msg.sender,status.avilable,timeStamp);
-
+        ProductStatus[_ProductId]=Product_Status(address(0x0),status.avilable,0);
+        uint amount=PriceOfProduct[_ProductId];
+        PriceOfProduct[_ProductId]=0;
+        (bool success, )=payable(msg.sender).call{value:amount}("");
+        require(success);
     }
 
         //  buyer update this function after delever this project
         // after succesfull delever product owner can withdraw their money 
-    function delevered(uint _ProductId) public {
+    function delivered(uint _ProductId) public {
         Product_Status storage product_Status= ProductStatus[_ProductId];
         address product_owner=product_Status.Buyer_Owner;
         require(product_Status.Status==status.ordered,"product not ordered yet");
         require(msg.sender==product_owner,"you're not buyer of this product");
         product_Status.Status=status.sold;
-        Approved[product_Owner[_ProductId]][_ProductId]=true;
     }
 
 
     // product owner can withraw their money after approve (or delever to buyer)
-    function WithdrawOwner(uint _productId) public {
-        address Product_owner=product_Owner[_productId];
+    function WithdrawOwner(uint productId) public {
+        address Product_owner=product_Owner[productId];
         require(msg.sender==Product_owner,"Owner UnAthorised:");
-        require(Approved[msg.sender][_productId],"product hasn't delevered");
-        uint amount=Balance[msg.sender][_productId];
-        Balance[msg.sender][_productId]=0;
-        payable(Product_owner).transfer(amount);
+        require(ProductStatus[productId].Status==status.sold,"product hasn't delevered");
+        uint amount=PriceOfProduct[productId];
+        PriceOfProduct[productId]=0;
+        (bool success, )=payable(msg.sender).call{value:amount}("");
+        require(success);
     }
 
     //only  owner can add delevery agent in copany
